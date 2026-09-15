@@ -1,25 +1,20 @@
 import os
 import uuid
-import shutil
+import asyncio
 import subprocess
 from pathlib import Path
-from typing import Optional
 
-import requests
-from fastapi import (
-    FastAPI,
-    UploadFile,
-    File,
-    Form,
-    HTTPException,
-    BackgroundTasks
-)
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, BackgroundTasks
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
+from faster_whisper import WhisperModel
+from deep_translator import GoogleTranslator
+import edge_tts
+
 
 # =========================================================
-# CONFIG
+# إعداد المشروع
 # =========================================================
 
 BASE = Path(__file__).parent
@@ -27,85 +22,58 @@ BASE = Path(__file__).parent
 UPLOADS = BASE / "uploads"
 WORK = BASE / "work"
 OUTPUTS = BASE / "outputs"
+STATIC = BASE / "static"
 
 for folder in [UPLOADS, WORK, OUTPUTS]:
     folder.mkdir(parents=True, exist_ok=True)
 
-MAX_FILE_SIZE = 500 * 1024 * 1024
-
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 app = FastAPI(
-    title="DubAI",
-    version="2.0"
+    title="DubAI Free",
+    version="3.0"
 )
 
 app.mount(
     "/static",
-    StaticFiles(directory=str(BASE / "static")),
+    StaticFiles(directory=str(STATIC)),
     name="static"
 )
 
+
 jobs = {}
 
+MODEL = None
+
 
 # =========================================================
-# SUPPORTED LANGUAGES
+# اللغات والأصوات
 # =========================================================
 
-LANGUAGES = {
-    "ar": {
-        "name": "العربية",
-        "voice": "alloy"
-    },
-    "en": {
-        "name": "English",
-        "voice": "alloy"
-    },
-    "fr": {
-        "name": "Français",
-        "voice": "alloy"
-    },
-    "es": {
-        "name": "Español",
-        "voice": "alloy"
-    },
-    "de": {
-        "name": "Deutsch",
-        "voice": "alloy"
-    },
-    "it": {
-        "name": "Italiano",
-        "voice": "alloy"
-    },
-    "pt": {
-        "name": "Português",
-        "voice": "alloy"
-    },
-    "ru": {
-        "name": "Русский",
-        "voice": "alloy"
-    },
-    "ja": {
-        "name": "日本語",
-        "voice": "alloy"
-    },
-    "ko": {
-        "name": "한국어",
-        "voice": "alloy"
-    },
-    "zh": {
-        "name": "中文",
-        "voice": "alloy"
-    }
+VOICES = {
+    "ar": "ar-SA-HamedNeural",
+    "en": "en-US-GuyNeural",
+    "fr": "fr-FR-HenriNeural",
+    "es": "es-ES-AlvaroNeural",
+    "de": "de-DE-ConradNeural",
+    "it": "it-IT-DiegoNeural",
+    "pt": "pt-BR-AntonioNeural",
+    "tr": "tr-TR-AhmetNeural",
+    "ru": "ru-RU-DmitryNeural",
+    "zh-CN": "zh-CN-YunxiNeural",
+    "ja": "ja-JP-KeitaNeural",
+    "ko": "ko-KR-InJoonNeural"
 }
 
 
+LANGUAGES = set(VOICES.keys())
+
+
 # =========================================================
-# HELPERS
+# تنفيذ أوامر FFmpeg
 # =========================================================
 
-def run_command(command):
+def run(command):
+
     result = subprocess.run(
         command,
         stdout=subprocess.PIPE,
@@ -114,6 +82,7 @@ def run_command(command):
     )
 
     if result.returncode != 0:
+
         raise RuntimeError(
             result.stderr[-4000:]
         )
@@ -121,26 +90,77 @@ def run_command(command):
     return result.stdout
 
 
+# =========================================================
+# مدة الفيديو
+# =========================================================
+
 def get_duration(video):
-    result = run_command([
+
+    result = run([
         "ffprobe",
         "-v",
         "error",
         "-show_entries",
         "format=duration",
         "-of",
-        "default=noprint_wrappers=1:nokey=1",
+        "csv=p=0",
         str(video)
     ])
 
-    try:
-        return float(result.strip())
-    except:
-        return 0
+    return float(result.strip())
 
 
-def extract_audio(video, output):
-    run_command([
+# =========================================================
+# نموذج Whisper
+# =========================================================
+
+def get_model():
+
+    global MODEL
+
+    if MODEL is None:
+
+        MODEL = WhisperModel(
+            "tiny",
+            device="cpu",
+            compute_type="int8"
+        )
+
+    return MODEL
+
+
+# =========================================================
+# الوقت الخاص بالترجمة
+# =========================================================
+
+def srt_time(seconds):
+
+    ms = int(seconds * 1000)
+
+    hours = ms // 3600000
+    ms %= 3600000
+
+    minutes = ms // 60000
+    ms %= 60000
+
+    seconds = ms // 1000
+    ms %= 1000
+
+    return (
+        f"{hours:02d}:"
+        f"{minutes:02d}:"
+        f"{seconds:02d},"
+        f"{ms:03d}"
+    )
+
+
+# =========================================================
+# استخراج الصوت
+# =========================================================
+
+def extract_audio(video, audio):
+
+    run([
         "ffmpeg",
         "-y",
         "-i",
@@ -152,217 +172,15 @@ def extract_audio(video, output):
         "16000",
         "-c:a",
         "pcm_s16le",
-        str(output)
+        str(audio)
     ])
 
 
 # =========================================================
-# OPENAI TRANSCRIPTION
+# معالجة الفيديو
 # =========================================================
 
-def transcribe_audio(audio_file, language):
-    if not OPENAI_API_KEY:
-        raise RuntimeError(
-            "OPENAI_API_KEY غير موجود في Railway Variables."
-        )
-
-    headers = {
-        "Authorization": f"Bearer {OPENAI_API_KEY}"
-    }
-
-    data = {
-        "model": "whisper-1",
-        "response_format": "verbose_json"
-    }
-
-    if language and language != "auto":
-        data["language"] = language
-
-    with open(audio_file, "rb") as f:
-
-        response = requests.post(
-            "https://api.openai.com/v1/audio/transcriptions",
-            headers=headers,
-            files={
-                "file": (
-                    "audio.wav",
-                    f,
-                    "audio/wav"
-                )
-            },
-            data=data,
-            timeout=600
-        )
-
-    if response.status_code != 200:
-        raise RuntimeError(
-            f"فشل التعرف على الكلام: {response.text}"
-        )
-
-    return response.json()
-
-
-# =========================================================
-# TRANSLATION
-# =========================================================
-
-def translate_text(text, source, target):
-
-    if not text.strip():
-        return ""
-
-    if source == target:
-        return text
-
-    if not OPENAI_API_KEY:
-        raise RuntimeError(
-            "OPENAI_API_KEY غير موجود."
-        )
-
-    prompt = f"""
-Translate the following spoken dialogue into {LANGUAGES[target]['name']}.
-
-Rules:
-- Keep the meaning accurate.
-- Make it natural for spoken dialogue.
-- Do not add explanations.
-- Return only the translated dialogue.
-
-Text:
-{text}
-"""
-
-    headers = {
-        "Authorization": f"Bearer {OPENAI_API_KEY}",
-        "Content-Type": "application/json"
-    }
-
-    payload = {
-        "model": "gpt-4o-mini",
-        "input": prompt,
-        "temperature": 0.2
-    }
-
-    response = requests.post(
-        "https://api.openai.com/v1/responses",
-        headers=headers,
-        json=payload,
-        timeout=120
-    )
-
-    if response.status_code != 200:
-        raise RuntimeError(
-            f"فشل الترجمة: {response.text}"
-        )
-
-    data = response.json()
-
-    text_result = data.get("output_text")
-
-    if not text_result:
-        raise RuntimeError(
-            "لم يتم الحصول على نتيجة الترجمة."
-        )
-
-    return text_result.strip()
-
-
-# =========================================================
-# TEXT TO SPEECH
-# =========================================================
-
-def generate_speech(text, target, output_file):
-
-    if not OPENAI_API_KEY:
-        raise RuntimeError(
-            "OPENAI_API_KEY غير موجود."
-        )
-
-    headers = {
-        "Authorization": f"Bearer {OPENAI_API_KEY}",
-        "Content-Type": "application/json"
-    }
-
-    payload = {
-        "model": "gpt-4o-mini-tts",
-        "voice": LANGUAGES[target]["voice"],
-        "input": text,
-        "response_format": "mp3"
-    }
-
-    response = requests.post(
-        "https://api.openai.com/v1/audio/speech",
-        headers=headers,
-        json=payload,
-        timeout=180
-    )
-
-    if response.status_code != 200:
-        raise RuntimeError(
-            f"فشل إنشاء الصوت: {response.text}"
-        )
-
-    with open(output_file, "wb") as f:
-        f.write(response.content)
-
-
-# =========================================================
-# SRT
-# =========================================================
-
-def srt_time(seconds):
-
-    milliseconds = int(seconds * 1000)
-
-    hours = milliseconds // 3600000
-    milliseconds %= 3600000
-
-    minutes = milliseconds // 60000
-    milliseconds %= 60000
-
-    secs = milliseconds // 1000
-    milliseconds %= 1000
-
-    return (
-        f"{hours:02d}:"
-        f"{minutes:02d}:"
-        f"{secs:02d},"
-        f"{milliseconds:03d}"
-    )
-
-
-def create_srt(segments, output_file):
-
-    with open(
-        output_file,
-        "w",
-        encoding="utf-8"
-    ) as f:
-
-        for i, segment in enumerate(
-            segments,
-            start=1
-        ):
-
-            f.write(f"{i}\n")
-
-            f.write(
-                f"{srt_time(segment['start'])} --> "
-                f"{srt_time(segment['end'])}\n"
-            )
-
-            f.write(
-                segment["text"].strip()
-            )
-
-            f.write("\n\n")
-
-
-# =========================================================
-# PROCESS VIDEO
-# =========================================================
-
-def process_video(
+async def process_video(
     job_id,
     video,
     source_language,
@@ -374,183 +192,229 @@ def process_video(
 
     try:
 
-        # -------------------------------------------------
-        # STEP 1
-        # -------------------------------------------------
+        work = WORK / job_id
 
-        job["progress"] = 5
-        job["message"] = "استخراج الصوت..."
-
-        work_folder = WORK / job_id
-        work_folder.mkdir(
+        work.mkdir(
             parents=True,
             exist_ok=True
         )
 
-        audio_file = work_folder / "audio.wav"
+
+        # -------------------------------------------------
+        # 1 - استخراج الصوت
+        # -------------------------------------------------
+
+        job["progress"] = 5
+        job["message"] = "🎧 استخراج الصوت..."
+
+        audio = work / "audio.wav"
 
         extract_audio(
             video,
-            audio_file
+            audio
         )
 
+
         # -------------------------------------------------
-        # STEP 2
+        # 2 - Whisper
         # -------------------------------------------------
 
-        job["progress"] = 20
-        job["message"] = "التعرف على الكلام بالذكاء الاصطناعي..."
+        job["progress"] = 15
+        job["message"] = "🎤 التعرف على الكلام..."
 
-        transcription = transcribe_audio(
-            audio_file,
-            source_language
+        model = get_model()
+
+        segments, info = model.transcribe(
+            str(audio),
+            language=None if source_language == "auto"
+            else source_language,
+            vad_filter=True,
+            beam_size=1
         )
 
-        original_segments = []
 
-        for segment in transcription.get(
-            "segments",
-            []
-        ):
+        segments = list(segments)
 
-            text = segment.get(
-                "text",
-                ""
-            ).strip()
+
+        if not segments:
+
+            raise RuntimeError(
+                "لم يتم العثور على كلام واضح في الفيديو."
+            )
+
+
+        # -------------------------------------------------
+        # 3 - الترجمة
+        # -------------------------------------------------
+
+        job["progress"] = 30
+        job["message"] = "🌍 ترجمة الكلام..."
+
+        translated = []
+
+        total = len(segments)
+
+
+        for index, segment in enumerate(segments):
+
+            text = segment.text.strip()
 
             if not text:
                 continue
 
-            original_segments.append({
-                "start": float(
-                    segment["start"]
-                ),
-                "end": float(
-                    segment["end"]
-                ),
-                "text": text
+
+            if source_language == target_language:
+
+                result = text
+
+            else:
+
+                source = (
+                    "auto"
+                    if source_language == "auto"
+                    else source_language
+                )
+
+                result = GoogleTranslator(
+                    source=source,
+                    target=target_language
+                ).translate(text)
+
+
+            translated.append({
+                "start": float(segment.start),
+                "end": float(segment.end),
+                "text": result
             })
 
-        if not original_segments:
 
-            raise RuntimeError(
-                "لم يتم العثور على كلام في الفيديو."
+            job["progress"] = (
+                30 +
+                int(
+                    ((index + 1) / total) * 25
+                )
             )
 
-        # -------------------------------------------------
-        # STEP 3
-        # -------------------------------------------------
-
-        job["progress"] = 35
-        job["message"] = "ترجمة الكلام..."
-
-        translated_segments = []
-
-        total = len(original_segments)
-
-        for i, segment in enumerate(
-            original_segments
-        ):
-
-            translated = translate_text(
-                segment["text"],
-                source_language,
-                target_language
-            )
-
-            translated_segments.append({
-                "start": segment["start"],
-                "end": segment["end"],
-                "text": translated
-            })
-
-            progress = 35 + int(
-                ((i + 1) / total) * 25
-            )
-
-            job["progress"] = progress
 
         # -------------------------------------------------
-        # STEP 4
+        # 4 - إنشاء SRT
         # -------------------------------------------------
 
-        subtitle_file = (
-            work_folder /
-            "subtitles.srt"
-        )
+        srt_file = work / "subtitles.srt"
 
-        create_srt(
-            translated_segments,
-            subtitle_file
-        )
+
+        with open(
+            srt_file,
+            "w",
+            encoding="utf-8"
+        ) as f:
+
+            for i, segment in enumerate(
+                translated,
+                1
+            ):
+
+                f.write(
+                    f"{i}\n"
+                )
+
+                f.write(
+                    f"{srt_time(segment['start'])} --> "
+                    f"{srt_time(segment['end'])}\n"
+                )
+
+                f.write(
+                    segment["text"]
+                )
+
+                f.write("\n\n")
+
 
         # -------------------------------------------------
-        # STEP 5
+        # 5 - إنشاء الأصوات
         # -------------------------------------------------
 
-        job["progress"] = 62
-        job["message"] = "إنشاء الدبلجة الصوتية..."
+        job["progress"] = 58
+        job["message"] = "🗣️ إنشاء الصوت المترجم..."
 
         voice_files = []
 
-        total = len(
-            translated_segments
-        )
+        total = len(translated)
 
-        for i, segment in enumerate(
-            translated_segments
+        voice = VOICES.get(target_language)
+
+        if not voice:
+
+            raise RuntimeError(
+                "لغة الصوت غير مدعومة."
+            )
+
+
+        for index, segment in enumerate(
+            translated
         ):
 
-            voice_file = (
-                work_folder /
-                f"voice_{i}.mp3"
+            mp3 = (
+                work /
+                f"voice_{index}.mp3"
             )
 
-            generate_speech(
+
+            communicate = edge_tts.Communicate(
                 segment["text"],
-                target_language,
-                voice_file
+                voice
             )
+
+
+            await communicate.save(
+                str(mp3)
+            )
+
 
             voice_files.append({
-                "file": voice_file,
+                "file": mp3,
                 "start": segment["start"]
             })
 
-            progress = 62 + int(
-                ((i + 1) / total) * 23
+
+            job["progress"] = (
+                58 +
+                int(
+                    ((index + 1) / total) * 25
+                )
             )
 
-            job["progress"] = progress
 
         # -------------------------------------------------
-        # STEP 6
+        # 6 - دمج الأصوات
         # -------------------------------------------------
 
-        job["progress"] = 87
-        job["message"] = "دمج الصوت مع الفيديو..."
+        job["progress"] = 85
+        job["message"] = "🎬 دمج الصوت مع الفيديو..."
+
 
         duration = get_duration(video)
 
-        if duration <= 0:
-            duration = 3600
 
-        delayed_files = []
+        delayed = []
 
-        for i, item in enumerate(
+
+        for index, item in enumerate(
             voice_files
         ):
 
-            delayed = (
-                work_folder /
-                f"delayed_{i}.wav"
+            wav = (
+                work /
+                f"delay_{index}.wav"
             )
+
 
             delay = int(
                 item["start"] * 1000
             )
 
-            run_command([
+
+            run([
                 "ffmpeg",
                 "-y",
                 "-i",
@@ -561,85 +425,92 @@ def process_video(
                 "48000",
                 "-ac",
                 "2",
-                str(delayed)
+                str(wav)
             ])
 
-            delayed_files.append(
-                delayed
-            )
 
-        # -------------------------------------------------
-        # STEP 7
-        # -------------------------------------------------
+            delayed.append(wav)
 
-        mixed_audio = (
-            work_folder /
-            "dubbed.wav"
-        )
 
-        if delayed_files:
-
-            command = [
-                "ffmpeg",
-                "-y",
-                "-f",
-                "lavfi",
-                "-i",
-                f"anullsrc=r=48000:cl=stereo:d={duration}"
-            ]
-
-            for file in delayed_files:
-                command += [
-                    "-i",
-                    str(file)
-                ]
-
-            inputs = "".join(
-                f"[{i}:a]"
-                for i in range(
-                    1,
-                    len(delayed_files) + 1
-                )
-            )
-
-            filter_complex = (
-                f"[0:a]{inputs}"
-                f"amix="
-                f"inputs={len(delayed_files)+1}:"
-                f"duration=first:"
-                f"normalize=0"
-                f"[mixed]"
-            )
-
-            command += [
-                "-filter_complex",
-                filter_complex,
-                "-map",
-                "[mixed]",
-                "-t",
-                str(duration),
-                str(mixed_audio)
-            ]
-
-            run_command(command)
-
-        else:
+        if not delayed:
 
             raise RuntimeError(
-                "لم يتم إنشاء أي صوت للدبلجة."
+                "لم يتم إنشاء الصوت."
             )
 
+
+        mixed = (
+            work /
+            "mixed.wav"
+        )
+
+
+        command = [
+            "ffmpeg",
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            f"anullsrc=r=48000:cl=stereo:d={duration}"
+        ]
+
+
+        for file in delayed:
+
+            command += [
+                "-i",
+                str(file)
+            ]
+
+
+        inputs = ""
+
+
+        for i in range(
+            1,
+            len(delayed) + 1
+        ):
+
+            inputs += f"[{i}:a]"
+
+
+        filter_complex = (
+            f"[0:a]{inputs}"
+            f"amix="
+            f"inputs={len(delayed)+1}:"
+            f"duration=first:"
+            f"normalize=0"
+            f"[audio]"
+        )
+
+
+        command += [
+            "-filter_complex",
+            filter_complex,
+            "-map",
+            "[audio]",
+            "-t",
+            str(duration),
+            str(mixed)
+        ]
+
+
+        run(command)
+
+
         # -------------------------------------------------
-        # STEP 8
+        # 7 - الفيديو النهائي
         # -------------------------------------------------
 
         job["progress"] = 95
-        job["message"] = "إنتاج الفيديو النهائي..."
+        job["message"] = "📦 تجهيز الفيديو النهائي..."
 
-        output_video = (
+
+        output = (
             OUTPUTS /
             f"{job_id}.mp4"
         )
+
 
         command = [
             "ffmpeg",
@@ -647,7 +518,7 @@ def process_video(
             "-i",
             str(video),
             "-i",
-            str(mixed_audio),
+            str(mixed),
             "-map",
             "0:v:0",
             "-map",
@@ -657,85 +528,91 @@ def process_video(
             "-c:a",
             "aac",
             "-b:a",
-            "192k",
-            "-shortest"
+            "128k"
         ]
 
-        # -------------------------------------------------
-        # Optional subtitles
-        # -------------------------------------------------
 
+        # إضافة ملف الترجمة
         if subtitles:
 
-            # Add SRT as a selectable subtitle track.
             command += [
                 "-i",
-                str(subtitle_file),
+                str(srt_file),
                 "-map",
                 "2:0",
                 "-c:s",
-                "mov_text",
-                "-metadata:s:s:0",
-                "language=ara"
+                "mov_text"
             ]
 
+
         command += [
-            str(output_video)
+            "-shortest",
+            str(output)
         ]
 
-        run_command(command)
+
+        run(command)
+
 
         # -------------------------------------------------
-        # DONE
+        # 8 - نجاح
         # -------------------------------------------------
 
         job["status"] = "done"
+
         job["progress"] = 100
+
         job["message"] = (
-            "اكتملت الدبلجة والترجمة بنجاح!"
+            "✅ اكتملت الدبلجة والترجمة!"
         )
 
         job["download"] = (
             f"/api/download/{job_id}"
         )
 
-        # Clean uploaded file
+
+        # حذف بعض الملفات المؤقتة
         try:
-            video.unlink()
+
+            audio.unlink()
+
         except:
             pass
+
 
     except Exception as error:
 
         print(
-            f"JOB ERROR {job_id}:",
+            "DubAI ERROR:",
             error
         )
 
         job["status"] = "error"
+
         job["progress"] = 0
+
         job["message"] = (
-            "حدث خطأ أثناء معالجة الفيديو."
+            "❌ حدث خطأ أثناء المعالجة."
         )
+
         job["error"] = str(error)
 
 
 # =========================================================
-# HOME
+# الصفحة الرئيسية
 # =========================================================
 
 @app.get("/")
 def home():
 
     return FileResponse(
-        BASE /
-        "static" /
+        STATIC /
         "index.html"
     )
 
 
 # =========================================================
-# UPLOAD
+# رفع الفيديو
 # =========================================================
 
 @app.post("/api/upload")
@@ -747,7 +624,8 @@ async def upload_video(
         file.filename or ""
     ).suffix.lower()
 
-    supported_formats = {
+
+    allowed = {
         ".mp4",
         ".mov",
         ".mkv",
@@ -756,28 +634,33 @@ async def upload_video(
         ".m4v"
     }
 
-    if extension not in supported_formats:
+
+    if extension not in allowed:
 
         raise HTTPException(
             status_code=400,
             detail="صيغة الفيديو غير مدعومة."
         )
 
+
     job_id = uuid.uuid4().hex
 
-    video_path = (
+
+    video = (
         UPLOADS /
         f"{job_id}{extension}"
     )
 
-    total_size = 0
+
+    size = 0
+
 
     try:
 
         with open(
-            video_path,
+            video,
             "wb"
-        ) as buffer:
+        ) as f:
 
             while True:
 
@@ -788,47 +671,46 @@ async def upload_video(
                 if not chunk:
                     break
 
-                total_size += len(chunk)
 
-                if total_size > MAX_FILE_SIZE:
+                size += len(chunk)
 
-                    buffer.close()
 
-                    try:
-                        video_path.unlink()
-                    except:
-                        pass
+                if size > 500 * 1024 * 1024:
 
                     raise HTTPException(
                         status_code=413,
-                        detail=(
-                            "الحد الأقصى لحجم الفيديو "
-                            "هو 500MB."
-                        )
+                        detail="الفيديو أكبر من 500MB."
                     )
 
-                buffer.write(chunk)
+
+                f.write(chunk)
+
 
     except HTTPException:
+
+        if video.exists():
+            video.unlink()
+
         raise
+
 
     except Exception as error:
 
-        try:
-            video_path.unlink()
-        except:
-            pass
+        if video.exists():
+            video.unlink()
 
         raise HTTPException(
             status_code=500,
             detail=str(error)
         )
 
+
     jobs[job_id] = {
         "status": "uploaded",
         "progress": 0,
-        "message": "تم رفع الفيديو بنجاح."
+        "message": "تم رفع الفيديو."
     }
+
 
     return {
         "job_id": job_id
@@ -836,7 +718,7 @@ async def upload_video(
 
 
 # =========================================================
-# START DUBBING
+# بدء الدبلجة
 # =========================================================
 
 @app.post("/api/dub/{job_id}")
@@ -855,6 +737,7 @@ async def start_dubbing(
             detail="المهمة غير موجودة."
         )
 
+
     if target not in LANGUAGES:
 
         raise HTTPException(
@@ -862,46 +745,48 @@ async def start_dubbing(
             detail="لغة الدبلجة غير مدعومة."
         )
 
-    video_files = list(
+
+    files = list(
         UPLOADS.glob(
             job_id + ".*"
         )
     )
 
-    if not video_files:
+
+    if not files:
 
         raise HTTPException(
             status_code=404,
             detail="الفيديو غير موجود."
         )
 
+
     jobs[job_id]["status"] = (
         "processing"
     )
 
-    jobs[job_id]["progress"] = 1
 
     background_tasks.add_task(
         process_video,
         job_id,
-        video_files[0],
+        files[0],
         source,
         target,
         subtitles
     )
 
+
     return {
-        "ok": True,
-        "message": "بدأت المعالجة."
+        "ok": True
     }
 
 
 # =========================================================
-# STATUS
+# حالة المهمة
 # =========================================================
 
 @app.get("/api/status/{job_id}")
-def get_status(job_id: str):
+def status(job_id: str):
 
     if job_id not in jobs:
 
@@ -910,37 +795,40 @@ def get_status(job_id: str):
             detail="المهمة غير موجودة."
         )
 
+
     return jobs[job_id]
 
 
 # =========================================================
-# DOWNLOAD
+# تحميل الفيديو
 # =========================================================
 
 @app.get("/api/download/{job_id}")
-def download_video(job_id: str):
+def download(job_id: str):
 
-    output = (
+    file = (
         OUTPUTS /
         f"{job_id}.mp4"
     )
 
-    if not output.exists():
+
+    if not file.exists():
 
         raise HTTPException(
             status_code=404,
-            detail="الفيديو النهائي غير جاهز."
+            detail="الفيديو غير جاهز."
         )
 
+
     return FileResponse(
-        output,
+        file,
         media_type="video/mp4",
         filename="DubAI_result.mp4"
     )
 
 
 # =========================================================
-# HEALTH
+# فحص السيرفر
 # =========================================================
 
 @app.get("/api/health")
@@ -948,9 +836,6 @@ def health():
 
     return {
         "ok": True,
-        "app": "DubAI",
-        "version": "2.0",
-        "openai_configured": bool(
-            OPENAI_API_KEY
-        )
+        "app": "DubAI Free",
+        "version": "3.0"
     }
