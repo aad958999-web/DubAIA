@@ -1,0 +1,866 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+
+<head>
+<meta charset="UTF-8">
+
+<meta name="viewport"
+content="width=device-width, initial-scale=1.0">
+
+<title>DubAI - دبلجة وترجمة الفيديو</title>
+
+<style>
+
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    font-family: Arial, sans-serif;
+    background: #0b1020;
+    color: white;
+}
+
+.container {
+    width: 100%;
+    max-width: 700px;
+    margin: auto;
+    padding: 20px;
+}
+
+.header {
+    text-align: center;
+    padding: 20px 0;
+}
+
+.logo {
+    font-size: 45px;
+}
+
+h1 {
+    margin: 8px 0;
+    font-size: 32px;
+}
+
+.subtitle {
+    color: #aeb8cc;
+}
+
+.card {
+    background: #151c30;
+    border-radius: 20px;
+    padding: 20px;
+}
+
+.upload {
+    display: block;
+    border: 2px dashed #3478ff;
+    border-radius: 16px;
+    padding: 30px 15px;
+    text-align: center;
+    cursor: pointer;
+    background: #10172a;
+}
+
+.upload input {
+    display: none;
+}
+
+.upload-icon {
+    font-size: 45px;
+}
+
+.upload-title {
+    font-size: 20px;
+    font-weight: bold;
+    margin-top: 10px;
+}
+
+video {
+    width: 100%;
+    max-height: 380px;
+    margin-top: 18px;
+    border-radius: 14px;
+    background: #000;
+}
+
+.settings {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-top: 20px;
+}
+
+.setting label {
+    display: block;
+    margin-bottom: 7px;
+}
+
+select {
+    width: 100%;
+    padding: 14px;
+    border-radius: 12px;
+    border: 1px solid #39445e;
+    background: #0c1222;
+    color: white;
+    font-size: 16px;
+}
+
+.option {
+    margin-top: 18px;
+    background: #10172a;
+    padding: 14px;
+    border-radius: 12px;
+}
+
+.option label {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.option input {
+    width: 20px;
+    height: 20px;
+}
+
+button {
+    width: 100%;
+    border: 0;
+    border-radius: 14px;
+    padding: 17px;
+    margin-top: 20px;
+    background: #18b878;
+    color: white;
+    font-size: 19px;
+    font-weight: bold;
+}
+
+button:disabled {
+    opacity: .45;
+}
+
+.progress-box {
+    display: none;
+    margin-top: 20px;
+    background: #10172a;
+    padding: 15px;
+    border-radius: 14px;
+}
+
+.progress {
+    width: 100%;
+    height: 14px;
+    background: #080c16;
+    border-radius: 20px;
+    overflow: hidden;
+}
+
+.progress-bar {
+    width: 0%;
+    height: 100%;
+    background: #3478ff;
+    transition: width .4s;
+}
+
+.progress-text {
+    text-align: center;
+    margin-top: 10px;
+}
+
+.status {
+    text-align: center;
+    margin-top: 8px;
+    color: #aeb8cc;
+}
+
+.download {
+    display: none;
+    width: 100%;
+    margin-top: 18px;
+    padding: 17px;
+    border-radius: 14px;
+    background: #f0a91b;
+    color: #111;
+    text-align: center;
+    text-decoration: none;
+    font-size: 18px;
+    font-weight: bold;
+}
+
+.error {
+    margin-top: 15px;
+    color: #ff6b6b;
+    text-align: center;
+}
+
+@media(max-width:550px) {
+
+    .settings {
+        grid-template-columns: 1fr;
+    }
+
+    .container {
+        padding: 12px;
+    }
+
+    h1 {
+        font-size: 27px;
+    }
+
+}
+
+</style>
+
+</head>
+
+<body>
+
+<div class="container">
+
+<div class="header">
+
+<div class="logo">
+🎙️
+</div>
+
+<h1>
+DubAI
+</h1>
+
+<div class="subtitle">
+دبلجة وترجمة الفيديو بالذكاء الاصطناعي
+</div>
+
+</div>
+
+
+<div class="card">
+
+
+<!-- اختيار الفيديو -->
+
+<label class="upload">
+
+<input
+type="file"
+id="videoInput"
+accept="video/*"
+>
+
+<div class="upload-icon">
+🎥
+</div>
+
+<div class="upload-title">
+اختر فيديو
+</div>
+
+<div class="subtitle">
+اضغط هنا لاختيار فيديو من هاتفك
+</div>
+
+</label>
+
+
+<!-- معاينة الفيديو -->
+
+<video
+id="videoPreview"
+controls
+playsinline
+style="display:none;"
+></video>
+
+
+<!-- اللغات -->
+
+<div class="settings">
+
+
+<div class="setting">
+
+<label>
+🌍 لغة الفيديو
+</label>
+
+<select id="sourceLanguage">
+
+<option value="auto">
+🔎 اكتشاف تلقائي
+</option>
+
+<option value="ar">
+🇩🇿 العربية
+</option>
+
+<option value="en">
+🇺🇸 English
+</option>
+
+<option value="fr">
+🇫🇷 Français
+</option>
+
+<option value="es">
+🇪🇸 Español
+</option>
+
+<option value="de">
+🇩🇪 Deutsch
+</option>
+
+<option value="it">
+🇮🇹 Italiano
+</option>
+
+<option value="pt">
+🇵🇹 Português
+</option>
+
+<option value="tr">
+🇹🇷 Türkçe
+</option>
+
+<option value="ru">
+🇷🇺 Русский
+</option>
+
+<option value="zh-CN">
+🇨🇳 中文
+</option>
+
+<option value="ja">
+🇯🇵 日本語
+</option>
+
+<option value="ko">
+🇰🇷 한국어
+</option>
+
+</select>
+
+</div>
+
+
+<div class="setting">
+
+<label>
+🗣️ لغة الدبلجة
+</label>
+
+<select id="targetLanguage">
+
+<option value="ar">
+🇩🇿 العربية
+</option>
+
+<option value="en">
+🇺🇸 English
+</option>
+
+<option value="fr">
+🇫🇷 Français
+</option>
+
+<option value="es">
+🇪🇸 Español
+</option>
+
+<option value="de">
+🇩🇪 Deutsch
+</option>
+
+<option value="it">
+🇮🇹 Italiano
+</option>
+
+<option value="pt">
+🇵🇹 Português
+</option>
+
+<option value="tr">
+🇹🇷 Türkçe
+</option>
+
+<option value="ru">
+🇷🇺 Русский
+</option>
+
+<option value="zh-CN">
+🇨🇳 中文
+</option>
+
+<option value="ja">
+🇯🇵 日本語
+</option>
+
+<option value="ko">
+🇰🇷 한국어
+</option>
+
+</select>
+
+</div>
+
+</div>
+
+
+<!-- الترجمة المكتوبة -->
+
+<div class="option">
+
+<label>
+
+<input
+type="checkbox"
+id="subtitles"
+checked
+>
+
+📝 إضافة ترجمة مكتوبة
+
+</label>
+
+</div>
+
+
+<!-- زر الدبلجة -->
+
+<button
+id="startButton"
+disabled
+>
+
+🚀 ابدأ الدبلجة والترجمة
+
+</button>
+
+
+<!-- التقدم -->
+
+<div
+class="progress-box"
+id="progressBox"
+>
+
+<div class="progress">
+
+<div
+class="progress-bar"
+id="progressBar"
+></div>
+
+</div>
+
+<div
+class="progress-text"
+id="progressPercent"
+>
+0%
+</div>
+
+<div
+class="status"
+id="statusText"
+>
+جاري التحضير...
+</div>
+
+</div>
+
+
+<!-- تحميل النتيجة -->
+
+<a
+id="downloadButton"
+class="download"
+download="DubAI_result.mp4"
+>
+
+⬇️ تحميل الفيديو النهائي
+
+</a>
+
+
+<div
+class="error"
+id="errorText"
+></div>
+
+
+</div>
+
+</div>
+
+
+<script>
+
+
+const videoInput =
+document.getElementById(
+"videoInput"
+);
+
+const videoPreview =
+document.getElementById(
+"videoPreview"
+);
+
+const startButton =
+document.getElementById(
+"startButton"
+);
+
+const sourceLanguage =
+document.getElementById(
+"sourceLanguage"
+);
+
+const targetLanguage =
+document.getElementById(
+"targetLanguage"
+);
+
+const subtitles =
+document.getElementById(
+"subtitles"
+);
+
+const progressBox =
+document.getElementById(
+"progressBox"
+);
+
+const progressBar =
+document.getElementById(
+"progressBar"
+);
+
+const progressPercent =
+document.getElementById(
+"progressPercent"
+);
+
+const statusText =
+document.getElementById(
+"statusText"
+);
+
+const downloadButton =
+document.getElementById(
+"downloadButton"
+);
+
+const errorText =
+document.getElementById(
+"errorText"
+);
+
+
+let selectedVideo = null;
+
+let jobId = null;
+
+
+/* اختيار الفيديو */
+
+videoInput.addEventListener(
+"change",
+function() {
+
+errorText.textContent = "";
+
+downloadButton.style.display =
+"none";
+
+if (!this.files.length) {
+
+startButton.disabled = true;
+
+return;
+
+}
+
+selectedVideo =
+this.files[0];
+
+videoPreview.src =
+URL.createObjectURL(
+selectedVideo
+);
+
+videoPreview.style.display =
+"block";
+
+startButton.disabled =
+false;
+
+}
+);
+
+
+/* بدء الدبلجة */
+
+startButton.addEventListener(
+"click",
+async function() {
+
+if (!selectedVideo) {
+return;
+}
+
+startButton.disabled =
+true;
+
+errorText.textContent = "";
+
+downloadButton.style.display =
+"none";
+
+progressBox.style.display =
+"block";
+
+setProgress(
+1,
+"جاري رفع الفيديو..."
+);
+
+
+try {
+
+
+/* رفع الفيديو */
+
+const uploadData =
+new FormData();
+
+uploadData.append(
+"file",
+selectedVideo
+);
+
+
+const uploadResponse =
+await fetch(
+"/api/upload",
+{
+method: "POST",
+body: uploadData
+}
+);
+
+
+if (!uploadResponse.ok) {
+
+throw new Error(
+await uploadResponse.text()
+);
+
+}
+
+
+const uploadResult =
+await uploadResponse.json();
+
+jobId =
+uploadResult.job_id;
+
+
+/* بدء الدبلجة */
+
+setProgress(
+3,
+"بدء الدبلجة والترجمة..."
+);
+
+
+const dubData =
+new FormData();
+
+
+dubData.append(
+"source",
+sourceLanguage.value
+);
+
+
+dubData.append(
+"target",
+targetLanguage.value
+);
+
+
+dubData.append(
+"subtitles",
+subtitles.checked
+? "true"
+: "false"
+);
+
+
+const dubResponse =
+await fetch(
+"/api/dub/" + jobId,
+{
+method: "POST",
+body: dubData
+}
+);
+
+
+if (!dubResponse.ok) {
+
+throw new Error(
+await dubResponse.text()
+);
+
+}
+
+
+/* متابعة العملية */
+
+checkStatus();
+
+
+}
+
+catch(error) {
+
+showError(
+error.message
+);
+
+}
+
+}
+);
+
+
+/* متابعة الحالة */
+
+async function checkStatus() {
+
+try {
+
+
+const response =
+await fetch(
+"/api/status/" + jobId
+);
+
+
+const data =
+await response.json();
+
+
+setProgress(
+data.progress || 0,
+data.message ||
+"جاري المعالجة..."
+);
+
+
+/* اكتملت */
+
+if (
+data.status === "done"
+) {
+
+
+setProgress(
+100,
+"✅ اكتملت الدبلجة والترجمة!"
+);
+
+
+downloadButton.href =
+data.download;
+
+downloadButton.style.display =
+"block";
+
+startButton.disabled =
+false;
+
+return;
+
+}
+
+
+/* حدث خطأ */
+
+if (
+data.status === "error"
+) {
+
+showError(
+data.error ||
+"حدث خطأ أثناء المعالجة."
+);
+
+return;
+
+}
+
+
+/* متابعة */
+
+setTimeout(
+checkStatus,
+1500
+);
+
+
+}
+
+catch(error) {
+
+showError(
+error.message
+);
+
+}
+
+}
+
+
+/* شريط التقدم */
+
+function setProgress(
+percent,
+message
+) {
+
+progressBar.style.width =
+percent + "%";
+
+progressPercent.textContent =
+percent + "%";
+
+statusText.textContent =
+message;
+
+}
+
+
+/* عرض الخطأ */
+
+function showError(
+message
+) {
+
+errorText.textContent =
+"❌ " + message;
+
+startButton.disabled =
+false;
+
+}
+
+</script>
+
+</body>
+
+</html>
