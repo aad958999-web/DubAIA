@@ -1,0 +1,347 @@
+* {
+    box-sizing: border-box;
+    -webkit-tap-highlight-color: transparent;
+}
+
+html {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    min-height: 100%;
+}
+
+body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    min-height: 100vh;
+    font-family: Arial, sans-serif;
+    background: #0b1020;
+    color: #ffffff;
+    direction: rtl;
+}
+
+.container {
+    width: 100%;
+    max-width: 700px;
+    margin: 0 auto;
+    padding: 20px;
+}
+
+.header {
+    text-align: center;
+    padding: 20px 0;
+}
+
+.logo {
+    font-size: 48px;
+    line-height: 1;
+}
+
+h1 {
+    margin: 10px 0 8px;
+    font-size: 34px;
+    font-weight: bold;
+}
+
+.subtitle {
+    color: #aeb8cc;
+    font-size: 15px;
+    line-height: 1.6;
+}
+
+.card {
+    width: 100%;
+    background: #151c30;
+    border-radius: 20px;
+    padding: 20px;
+    box-shadow: 0 10px 35px rgba(0, 0, 0, 0.25);
+}
+
+/* رفع الفيديو */
+
+.upload {
+    display: block;
+    width: 100%;
+    border: 2px dashed #3478ff;
+    border-radius: 16px;
+    padding: 32px 15px;
+    text-align: center;
+    cursor: pointer;
+    background: #10172a;
+    transition: 0.2s;
+}
+
+.upload:hover {
+    background: #141d34;
+}
+
+.upload:active {
+    transform: scale(0.99);
+}
+
+.upload input {
+    display: none;
+}
+
+.upload-icon {
+    font-size: 48px;
+}
+
+.upload-title {
+    margin-top: 12px;
+    font-size: 20px;
+    font-weight: bold;
+}
+
+/* الفيديو */
+
+video {
+    display: block;
+    width: 100%;
+    max-height: 380px;
+    margin-top: 18px;
+    border-radius: 14px;
+    background: #000000;
+}
+
+/* الإعدادات */
+
+.settings {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-top: 20px;
+}
+
+.setting {
+    width: 100%;
+}
+
+.setting label {
+    display: block;
+    margin-bottom: 8px;
+    font-size: 15px;
+    font-weight: bold;
+}
+
+select {
+    width: 100%;
+    padding: 14px;
+    border-radius: 12px;
+    border: 1px solid #39445e;
+    outline: none;
+    background: #0c1222;
+    color: #ffffff;
+    font-size: 16px;
+    cursor: pointer;
+}
+
+select:focus {
+    border-color: #3478ff;
+}
+
+/* خيار الترجمة */
+
+.option {
+    margin-top: 18px;
+    background: #10172a;
+    padding: 14px;
+    border-radius: 12px;
+}
+
+.option label {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+    font-size: 15px;
+}
+
+.option input {
+    width: 20px;
+    height: 20px;
+    cursor: pointer;
+}
+
+/* زر البدء */
+
+button {
+    width: 100%;
+    border: none;
+    outline: none;
+    border-radius: 14px;
+    padding: 17px;
+    margin-top: 20px;
+    background: #18b878;
+    color: #ffffff;
+    font-size: 19px;
+    font-weight: bold;
+    cursor: pointer;
+    transition: 0.2s;
+}
+
+button:hover {
+    background: #159f69;
+}
+
+button:active {
+    transform: scale(0.98);
+}
+
+button:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+    transform: none;
+}
+
+/* شريط التقدم */
+
+.progress-box {
+    display: none;
+    margin-top: 20px;
+    background: #10172a;
+    padding: 15px;
+    border-radius: 14px;
+}
+
+.progress {
+    width: 100%;
+    height: 14px;
+    background: #080c16;
+    border-radius: 20px;
+    overflow: hidden;
+}
+
+.progress-bar {
+    width: 0%;
+    height: 100%;
+    background: #3478ff;
+    border-radius: 20px;
+    transition: width 0.4s ease;
+}
+
+.progress-text {
+    text-align: center;
+    margin-top: 10px;
+    font-size: 16px;
+    font-weight: bold;
+}
+
+.status {
+    text-align: center;
+    margin-top: 8px;
+    color: #aeb8cc;
+    font-size: 14px;
+    line-height: 1.5;
+}
+
+/* زر التحميل */
+
+.download {
+    display: none;
+    width: 100%;
+    margin-top: 18px;
+    padding: 17px;
+    border-radius: 14px;
+    background: #f0a91b;
+    color: #111111;
+    text-align: center;
+    text-decoration: none;
+    font-size: 18px;
+    font-weight: bold;
+    transition: 0.2s;
+}
+
+.download:hover {
+    background: #d9950e;
+}
+
+.download:active {
+    transform: scale(0.98);
+}
+
+/* رسائل الخطأ */
+
+.error {
+    margin-top: 15px;
+    color: #ff6b6b;
+    text-align: center;
+    font-size: 14px;
+    line-height: 1.5;
+}
+
+/* الهاتف */
+
+@media (max-width: 550px) {
+
+    .container {
+        padding: 12px;
+    }
+
+    .card {
+        padding: 15px;
+        border-radius: 17px;
+    }
+
+    .header {
+        padding: 15px 0;
+    }
+
+    .logo {
+        font-size: 42px;
+    }
+
+    h1 {
+        font-size: 28px;
+    }
+
+    .settings {
+        grid-template-columns: 1fr;
+        gap: 14px;
+    }
+
+    .upload {
+        padding: 28px 12px;
+    }
+
+    video {
+        max-height: 300px;
+    }
+
+    button {
+        font-size: 17px;
+    }
+}
+
+/* الشاشات الصغيرة جدًا */
+
+@media (max-width: 360px) {
+
+    .container {
+        padding: 8px;
+    }
+
+    .card {
+        padding: 12px;
+    }
+
+    h1 {
+        font-size: 25px;
+    }
+
+    .subtitle {
+        font-size: 14px;
+    }
+
+    select {
+        font-size: 14px;
+        padding: 12px;
+    }
+
+    button,
+    .download {
+        padding: 15px;
+        font-size: 16px;
+    }
+}
