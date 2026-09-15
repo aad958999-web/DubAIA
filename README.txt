@@ -1,0 +1,1 @@
+DubAI Complete: اختيار فيديو + لغة المصدر + لغة الدبلجة + ترجمة SRT + Whisper + ترجمة + Edge TTS + FFmpeg. ارفع المشروع إلى خادم Python/Docker ثم افتح الرابط في WebIntoApp.\n
